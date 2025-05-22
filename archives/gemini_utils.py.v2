@@ -1,0 +1,236 @@
+import requests
+import json
+import os
+import time # Import time for delays
+
+# Using the API key provided by the user for this specific request
+# In a production environment, use environment variables for security
+GEMINI_API_KEY = "AIzaSyAnp0lHEZnajMbDavNPrrTUhSGareRwFp0" # Replace with your actual API key or use environment variable
+
+# Using gemini-2.0-flash model and generateContent endpoint
+GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+
+# --- Existing function to fetch original verse and meaning ---
+def fetch_verse_from_gemini(chapter, verse):
+    """
+    Fetches a specific Bhagavad Gita verse and its meaning in Telugu
+    from the Gemini API using the generateContent endpoint.
+
+    Args:
+        chapter (int): The chapter number.
+        verse (int): The verse number.
+
+    Returns:
+        tuple: A tuple containing (telugu_verse, telugu_meaning) if successful,
+               otherwise (None, None).
+    """
+    if not GEMINI_API_KEY:
+        print("Error: GEMINI_API_KEY is not set.")
+        return None, None
+
+    # Prompt tailored to get the verse and meaning in Telugu
+    prompt = f"Provide Bhagavad Gita Chapter {chapter}, Verse {verse} in Telugu script and its meaning in Telugu script. Format the output clearly with the verse first, followed by the meaning. Label them explicitly as 'Verse:' and 'Meaning:'. Ensure the response is only the verse and meaning, without conversational text."
+
+    headers = {
+        'Content-Type': 'application/json'
+    }
+
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
+    try:
+        print(f"Calling Gemini API for Chapter {chapter}, Verse {verse} (initial fetch)...")
+        response = requests.post(GEMINI_API_URL, headers=headers, data=json.dumps(data))
+        response.raise_for_status() # Raise an exception for bad status codes (like 4xx or 5xx)
+
+        response_data = response.json()
+
+        telugu_verse = None
+        telugu_meaning = None
+
+        if 'candidates' in response_data and response_data['candidates']:
+            candidate = response_data['candidates'][0]
+            if 'content' in candidate and 'parts' in candidate['content']:
+                text_content = candidate['content']['parts'][0]['text']
+
+                # Basic parsing: look for "Verse:" and "Meaning:" labels
+                verse_label = "Verse:"
+                meaning_label = "Meaning:"
+
+                verse_start = text_content.find(verse_label)
+                meaning_start = text_content.find(meaning_label)
+
+                if verse_start != -1 and meaning_start != -1 and meaning_start > verse_start:
+                    telugu_verse = text_content[verse_start + len(verse_label):meaning_start].strip()
+                    telugu_meaning = text_content[meaning_start + len(meaning_label):].strip()
+                else:
+                    print("Warning: 'Verse:' or 'Meaning:' labels not found or in unexpected order. Attempting alternative parsing.")
+                    lines = text_content.strip().split('\n')
+                    if len(lines) >= 2:
+                        telugu_verse = lines[0].strip()
+                        telugu_meaning = "\n".join(lines[1:]).strip()
+                    else:
+                         print("Warning: Could not parse verse/meaning from response text.")
+                         telugu_verse = text_content.strip()
+                         telugu_meaning = "Meaning could not be parsed."
+
+
+        if telugu_verse and telugu_meaning and telugu_verse != "Meaning could not be parsed." and telugu_meaning != "Meaning could not be parsed.":
+            print(f"Successfully fetched verse and meaning from Gemini.")
+            return telugu_verse, telugu_meaning
+        else:
+            print("Error: Could not extract verse or meaning from Gemini response after parsing attempts.")
+            print("Gemini Response Text:", text_content if 'text_content' in locals() else "N/A")
+            print("Full Gemini Response Data:", response_data)
+            return None, None
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Gemini API: {e}")
+        return None, None
+    except Exception as e:
+        print(f"An unexpected error occurred during Gemini API call: {e}")
+        print("Gemini Response Data (if available):", response_data if 'response_data' in locals() else "N/A")
+        return None, None
+
+# --- New function for polishing and generating description ---
+def enhance_verse_with_gemini(chapter, verse, original_verse, original_meaning):
+    """
+    Uses Gemini to polish the Telugu verse and meaning and generate a short description.
+
+    Args:
+        chapter (int): The chapter number.
+        verse (int): The verse number.
+        original_verse (str): The original Telugu verse text.
+        original_meaning (str): The original Telugu meaning text.
+
+    Returns:
+        tuple: A tuple containing (polished_verse, polished_meaning, description)
+               if successful, otherwise (None, None, None).
+    """
+    if not GEMINI_API_KEY:
+        print("Error: GEMINI_API_KEY is not set.")
+        return None, None, None
+
+    prompt = f"""Review the following Bhagavad Gita verse and its meaning in Telugu.
+Verse (Original): {original_verse}
+Meaning (Original): {original_meaning}
+
+1. Polish the Telugu verse and meaning for clarity, correct grammar, and natural sentence flow. Ensure they are accurate to the original Sanskrit meaning.
+2. Write a short, engaging story or description in Telugu that captures the essence and context of this verse. This description should help a reader understand the practical application or deeper meaning of the verse.
+
+Format the output clearly with labels:
+Polished Verse:
+[Polished Telugu Verse]
+
+Polished Meaning:
+[Polished Telugu Meaning]
+
+Description:
+[Short Telugu Description/Story]
+"""
+
+    headers = {
+        'Content-Type': 'application/json'
+    }
+
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
+    try:
+        print(f"Calling Gemini API for enhancement of Chapter {chapter}, Verse {verse}...")
+        response = requests.post(GEMINI_API_URL, headers=headers, data=json.dumps(data))
+        response.raise_for_status()
+
+        response_data = response.json()
+
+        polished_verse = None
+        polished_meaning = None
+        description = None
+
+        if 'candidates' in response_data and response_data['candidates']:
+            candidate = response_data['candidates'][0]
+            if 'content' in candidate and 'parts' in candidate['content']:
+                text_content = candidate['content']['parts'][0]['text']
+
+                # Parsing the enhanced response
+                polished_verse_label = "Polished Verse:"
+                polished_meaning_label = "Polished Meaning:"
+                description_label = "Description:"
+
+                pv_start = text_content.find(polished_verse_label)
+                pm_start = text_content.find(polished_meaning_label)
+                desc_start = text_content.find(description_label)
+
+                if pv_start != -1 and pm_start != -1 and desc_start != -1:
+                    # Extract text between labels
+                    polished_verse = text_content[pv_start + len(polished_verse_label):pm_start].strip()
+                    polished_meaning = text_content[pm_start + len(polished_meaning_label):desc_start].strip()
+                    description = text_content[desc_start + len(description_label):].strip()
+                else:
+                     print("Warning: Enhancement labels not found in Gemini response. Cannot parse.")
+                     print("Gemini Response Text:", text_content)
+
+
+        if polished_verse and polished_meaning and description:
+            print(f"Successfully enhanced Chapter {chapter}, Verse {verse}.")
+            return polished_verse, polished_meaning, description
+        else:
+            print(f"Failed to extract polished text or description for Chapter {chapter}, Verse {verse}.")
+            print("Gemini Response Data:", response_data)
+            return None, None, None
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Gemini API for enhancement: {e}")
+        return None, None, None
+    except Exception as e:
+        print(f"An unexpected error occurred during Gemini enhancement API call: {e}")
+        print("Gemini Response Data (if available):", response_data if 'response_data' in locals() else "N/A")
+        return None, None, None
+
+
+if __name__ == '__main__':
+    # Example usage (for testing the module directly)
+    # Note: This will make actual API calls
+    print("Testing gemini_utils.py...")
+
+    # Test initial fetch
+    print("\n--- Testing initial fetch ---")
+    verse_text, meaning_text = fetch_verse_from_gemini(chapter=2, verse=47)
+    if verse_text and meaning_text:
+        print("\n--- Fetched Verse ---")
+        print(verse_text)
+        print("\n--- Fetched Meaning ---")
+        print(meaning_text)
+    else:
+        print("\nFailed to fetch verse from Gemini.")
+
+    # Test enhancement (requires a successful initial fetch)
+    if verse_text and meaning_text:
+        print("\n--- Testing enhancement ---")
+        # Add a small delay before the next API call
+        time.sleep(2)
+        polished_v, polished_m, desc = enhance_verse_with_gemini(2, 47, verse_text, meaning_text)
+        if polished_v and polished_m and desc:
+            print("\n--- Polished Verse ---")
+            print(polished_v)
+            print("\n--- Polished Meaning ---")
+            print(polished_m)
+            print("\n--- Description ---")
+            print(desc)
+        else:
+            print("\nFailed to enhance verse with Gemini.")
+

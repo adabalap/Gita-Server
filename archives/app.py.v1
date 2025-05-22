@@ -1,0 +1,74 @@
+from flask import Flask, request, jsonify
+import database # Our database module
+import gemini_utils # Our Gemini utility module
+
+app = Flask(__name__)
+
+# Initialize the database (already called in database.py, but good to be explicit)
+database.init_db()
+
+@app.route('/')
+def index():
+    """Basic route to confirm the API is running."""
+    return "Bhagavath Geetha Telugu API is running!"
+
+@app.route('/verse', methods=['GET'])
+def get_bhagavath_geetha_verse():
+    """
+    API endpoint to retrieve a Bhagavad Gita verse and its meaning in Telugu.
+    Expects 'chapter' and 'verse' as query parameters.
+    """
+    chapter = request.args.get('chapter', type=int)
+    verse = request.args.get('verse', type=int)
+
+    # Validate input
+    if chapter is None or verse is None:
+        return jsonify({"error": "Please provide 'chapter' and 'verse' query parameters."}), 400
+    if chapter <= 0 or verse <= 0:
+         return jsonify({"error": "Chapter and verse numbers must be positive."}), 400
+
+    print(f"Received request for Chapter {chapter}, Verse {verse}")
+
+    # 1. Try to get the verse from the database
+    verse_data = database.get_verse_from_db(chapter, verse)
+
+    if verse_data:
+        print(f"Found Chapter {chapter}, Verse {verse} in database.")
+        # If found, return it
+        return jsonify({
+            "chapter": verse_data['chapter'],
+            "verse": verse_data['verse'],
+            "telugu_verse": verse_data['telugu_verse'],
+            "telugu_meaning": verse_data['telugu_meaning']
+        })
+    else:
+        print(f"Chapter {chapter}, Verse {verse} not found in database. Attempting to fetch from Gemini...")
+        # 2. If not found, fetch from Gemini API
+        telugu_verse, telugu_meaning = gemini_utils.fetch_verse_from_gemini(chapter, verse)
+
+        if telugu_verse and telugu_meaning:
+            print(f"Successfully fetched Chapter {chapter}, Verse {verse} from Gemini.")
+            # 3. Insert the fetched verse into the database for future use
+            inserted = database.insert_verse_into_db(chapter, verse, telugu_verse, telugu_meaning)
+
+            # Return the fetched data
+            return jsonify({
+                "chapter": chapter,
+                "verse": verse,
+                "telugu_verse": telugu_verse,
+                "telugu_meaning": telugu_meaning,
+                "source": "Gemini API" # Indicate source
+            })
+        else:
+            print(f"Failed to fetch Chapter {chapter}, Verse {verse} from Gemini.")
+            # If fetching from Gemini fails
+            return jsonify({
+                "error": f"Could not retrieve Chapter {chapter}, Verse {verse} from database or external source."
+            }), 500 # Internal Server Error or appropriate error code
+
+if __name__ == '__main__':
+    # In a production environment, use a production-ready WSGI server like Gunicorn or uWSGI
+    # app.run(debug=True) # debug=True is useful for development
+    # Use host='0.0.0.0' to make the server publicly accessible (be cautious in production)
+    app.run(debug=True, host='0.0.0.0')
+
