@@ -1,6 +1,6 @@
 # Use an official Python runtime as a parent image
-# We choose a slim image for smaller size, and 3.9 as a common stable version.
-FROM python:3.9-slim-buster
+# Changed to Python 3.10 to satisfy the 'click' dependency requirement (as per error logs)
+FROM python:3.10-slim-buster
 
 # Set the working directory in the container
 WORKDIR /app
@@ -15,7 +15,7 @@ RUN apt-get update \
         python3-dev \
         # Add any other specific libraries your Python packages might need here:
         # e.g., libpq-dev (for PostgreSQL client), libjpeg-dev (for Pillow),
-        # libz-dev, libglib2.0-0, libsm6, libxext6, libxrender1 (for some GUI/image libs)
+        # libz-dev, libglib2.0-0, libsm6, libxext6, libxrender1 (for for some GUI/image libs)
     && rm -rf /var/lib/apt/lists/* # Clean up apt cache to keep image size small
 
 # Copy the requirements file into the working directory
