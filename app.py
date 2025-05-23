@@ -3,6 +3,18 @@ from flask_cors import CORS # Import CORS
 import database
 import gemini_utils
 import os # Import os module
+from datetime import datetime # Import datetime for timestamps
+import logging # Import the logging module
+
+# Configure logging to a file
+# This will create a file named 'app.log' and write all INFO level messages and above to it.
+# The format includes timestamp, log level, and the message.
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename='app.log',
+    filemode='a' # Append to the file if it exists
+)
 
 # Corrected Flask initialization: use __name__
 app = Flask(__name__)
@@ -17,6 +29,8 @@ database.init_db()
 @app.route('/')
 def index():
     """Basic route to confirm the API is running."""
+    # Log with logging.info instead of print
+    logging.info("Bhagavath Geetha Telugu API is running!")
     return "Bhagavath Geetha Telugu API is running!"
 
 @app.route('/verse', methods=['GET'])
@@ -27,24 +41,31 @@ def get_bhagavath_geetha_verse():
     Prioritizes serving polished/enhanced text if available, includes Sanskrit
     in Telugu script.
     """
+    # Get client IP address, checking X-Forwarded-For for proxy awareness
+    # If the app is behind a proxy (like Nginx, Cloudflare, etc.), X-Forwarded-For
+    # will contain the actual client's IP. Otherwise, request.remote_addr is used.
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.user_agent.string
+    logging.info(f"Incoming request from IP: {client_ip}, User-Agent: {user_agent}")
+
     chapter = request.args.get('chapter', type=int)
     verse = request.args.get('verse', type=int)
 
     # Validate input
     if chapter is None or verse is None:
-        print("Validation Error: Missing chapter or verse parameter.")
+        logging.error("Validation Error: Missing chapter or verse parameter.")
         return jsonify({"error": "దయచేసి 'chapter' మరియు 'verse' పారామితులను అందించండి."}), 400 # Please provide 'chapter' and 'verse' parameters.
     if chapter <= 0 or verse <= 0:
-         print(f"Validation Error: Invalid chapter ({chapter}) or verse ({verse}) number.")
-         return jsonify({"error": "అధ్యాయం మరియు శ్లోకం సంఖ్యలు ధనాత్మకంగా ఉండాలి."}), 400 # Chapter and verse numbers must be positive.
+        logging.error(f"Validation Error: Invalid chapter ({chapter}) or verse ({verse}) number.")
+        return jsonify({"error": "అధ్యాయం మరియు శ్లోకం సంఖ్యలు ధనాత్మకంగా ఉండాలి."}), 400 # Chapter and verse numbers must be positive.
 
-    print(f"Received request for Chapter {chapter}, Verse {verse}")
+    logging.info(f"Received request for Chapter {chapter}, Verse {verse}")
 
     # 1. Try to get the verse from the database
     verse_data = database.get_verse_from_db(chapter, verse)
 
     if verse_data:
-        print(f"Found Chapter {chapter}, Verse {verse} in database.")
+        logging.info(f"Found Chapter {chapter}, Verse {verse} in database.")
         # verse_data is already a dictionary due to custom row_factory in database.py
 
         # Serve polished text if available, otherwise fallback to original cleaned text
@@ -66,14 +87,14 @@ def get_bhagavath_geetha_verse():
             "source": "Database" # Indicate source
         })
     else:
-        print(f"Chapter {chapter}, Verse {verse} not found in database. Attempting to fetch from Gemini...")
+        logging.info(f"Chapter {chapter}, Verse {verse} not found in database. Attempting to fetch from Gemini...")
         # 2. If not found, fetch from Gemini API (initial fetch)
         # This fetch_verse_from_gemini function now returns sanskrit (Telugu script), cleaned telugu verse, and cleaned telugu meaning
         sanskrit_verse_telugu_script, telugu_verse, telugu_meaning = gemini_utils.fetch_verse_from_gemini(chapter, verse)
 
         # Check if the fetch was successful (all 3 values are not None)
         if sanskrit_verse_telugu_script is not None and telugu_verse is not None and telugu_meaning is not None:
-            print(f"Successfully fetched Chapter {chapter}, Verse {verse} from Gemini.")
+            logging.info(f"Successfully fetched Chapter {chapter}, Verse {verse} from Gemini.")
             # 3. Insert the fetched verse into the database for future use
             # Insert the fetched sanskrit (Telugu script) and cleaned original telugu text
             # The enhance_db.py script can later overwrite polished/description if needed
@@ -93,7 +114,7 @@ def get_bhagavath_geetha_verse():
                 "source": "Gemini API (Initial Fetch & Cleaned)" # Indicate source
             })
         else:
-            print(f"Failed to fetch complete data for Chapter {chapter}, Verse {verse} from Gemini.")
+            logging.error(f"Failed to fetch complete data for Chapter {chapter}, Verse {verse} from Gemini.")
             # If fetching from Gemini fails
             return jsonify({
                 "error": f"అధ్యాయం {chapter}, శ్లోకం {verse} డేటాబేస్ లేదా బాహ్య మూలం నుండి పొందలేకపోయింది." # Could not retrieve Chapter {chapter}, Verse {verse} from database or external source.
