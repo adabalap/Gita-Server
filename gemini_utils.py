@@ -9,10 +9,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
     print("Warning: GEMINI_API_KEY environment variable not set. API calls will fail.")
-    # Using the API key provided by the user for this specific request as a fallback
-    # In a production environment, strictly use environment variables
-    print("Falling back to hardcoded API key (NOT recommended for production).")
-    GEMINI_API_KEY = "" # Replace with your actual API key
+    # For local testing, you might temporarily hardcode it here, but remove for production.
+    # GEMINI_API_KEY = "YOUR_HARDCODED_GEMINI_API_KEY" # <<< IMPORTANT: Replace with your actual key for local testing or remove
+    # If GEMINI_API_KEY is still not set, API calls will fail.
+    pass
 
 
 # Using gemini-2.0-flash model and generateContent endpoint
@@ -281,6 +281,93 @@ Description:
         print("Gemini Response Data (if available):", response_data if 'response_data' in locals() else "N/A")
         return None, None, None
 
+def translate_content_to_english(sanskrit_telugu, telugu_meaning, telugu_description):
+    """
+    Translates Sanskrit (Telugu script), Telugu meaning, and Telugu description to English.
+
+    Args:
+        sanskrit_telugu (str): Sanskrit verse in Telugu script.
+        telugu_meaning (str): Telugu meaning of the verse.
+        telugu_description (str): Telugu description of the verse.
+
+    Returns:
+        dict: A dictionary with English translations for 'sanskrit_verse_english_script',
+              'english_meaning', and 'english_description', or None if translation fails.
+    """
+    if not GEMINI_API_KEY:
+        print("Error: GEMINI_API_KEY is not set. Cannot translate content.")
+        return None
+
+    prompt = f"""Translate the following Bhagavad Gita verse components from Telugu to English.
+Maintain the spiritual essence and context.
+
+Sanskrit Verse (Telugu Script): {sanskrit_telugu}
+Telugu Meaning: {telugu_meaning}
+Telugu Description: {telugu_description}
+
+Strictly format the output as a JSON object with the following keys:
+"sanskrit_verse_english_script": [English transliteration of Sanskrit verse]
+"english_meaning": [English translation of the meaning]
+"english_description": [English translation of the description]
+"""
+
+    headers = {
+        'Content-Type': 'application/json'
+    }
+
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": {
+                "type": "OBJECT",
+                "properties": {
+                    "sanskrit_verse_english_script": { "type": "STRING" },
+                    "english_meaning": { "type": "STRING" },
+                    "english_description": { "type": "STRING" }
+                },
+                "propertyOrdering": ["sanskrit_verse_english_script", "english_meaning", "english_description"]
+            }
+        }
+    }
+
+    try:
+        print("Calling Gemini API for translation...")
+        response = requests.post(GEMINI_API_URL, headers=headers, data=json.dumps(data))
+        response.raise_for_status()
+
+        response_data = response.json()
+
+        if 'candidates' in response_data and response_data['candidates']:
+            candidate = response_data['candidates'][0]
+            if 'content' in candidate and 'parts' in candidate['content']:
+                json_string = candidate['content']['parts'][0]['text']
+                translated_content = json.loads(json_string)
+                print("Successfully translated content.")
+                return translated_content
+        
+        print("Error: No candidates or content found in Gemini translation response.")
+        print("Full Gemini Response Data:", response_data)
+        return None
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Gemini API for translation: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"JSON decoding error in translation response: {e}")
+        print("Raw response text:", response.text if 'response' in locals() else "N/A")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred during Gemini translation API call: {e}")
+        print("Gemini Response Data (if available):", response_data if 'response_data' in locals() else "N/A")
+        return None
+
 
 if __name__ == '__main__':
     # Example usage (for testing the module directly)
@@ -317,3 +404,17 @@ if __name__ == '__main__':
         else:
             print("\nFailed to enhance verse with Gemini.")
 
+    # Test translation
+    if sanskrit_v_telugu and telugu_v and telugu_m:
+        print("\n--- Testing translation ---")
+        time.sleep(2) # Delay before next API call
+        translated_data = translate_content_to_english(sanskrit_v_telugu, telugu_v, telugu_m)
+        if translated_data:
+            print("\n--- Translated Sanskrit Verse (English Script) ---")
+            print(translated_data.get('sanskrit_verse_english_script'))
+            print("\n--- Translated English Meaning ---")
+            print(translated_data.get('english_meaning'))
+            print("\n--- Translated English Description ---")
+            print(translated_data.get('english_description'))
+        else:
+            print("\nFailed to translate content.")
