@@ -120,6 +120,42 @@ def get_bhagavath_geetha_verse():
                 "error": f"అధ్యాయం {chapter}, శ్లోకం {verse} డేటాబేస్ లేదా బాహ్య మూలం నుండి పొందలేకపోయింది." # Could not retrieve Chapter {chapter}, Verse {verse} from database or external source.
             }), 500 # Internal Server Error or appropriate error code
 
+@app.route('/translate', methods=['POST'])
+def translate_verse_endpoint():
+    """
+    API endpoint to translate Telugu verse components to English using Gemini API.
+    Expects JSON body with 'sanskrit_telugu', 'telugu_meaning', 'telugu_description'.
+    """
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.user_agent.string
+    logging.info(f"Incoming translation request from IP: {client_ip}, User-Agent: {user_agent}")
+
+    data = request.get_json()
+    if not data:
+        logging.error("Translation Error: No JSON data received.")
+        return jsonify({"error": "అనువాదం కోసం JSON డేటా అవసరం."}), 400 # JSON data required for translation.
+
+    sanskrit_telugu = data.get('sanskrit_telugu')
+    telugu_meaning = data.get('telugu_meaning')
+    telugu_description = data.get('telugu_description')
+
+    if not all([sanskrit_telugu, telugu_meaning, telugu_description]):
+        logging.error("Translation Error: Missing one or more required fields for translation.")
+        return jsonify({"error": "అనువాదం కోసం అన్ని శ్లోకం భాగాలు అవసరం."}), 400 # All verse components required for translation.
+
+    logging.info("Attempting to translate content using Gemini...")
+    english_translation = gemini_utils.translate_content_to_english(
+        sanskrit_telugu, telugu_meaning, telugu_description
+    )
+
+    if english_translation:
+        logging.info("Translation successful.")
+        return jsonify(english_translation), 200
+    else:
+        logging.error("Failed to get translation from Gemini API.")
+        return jsonify({"error": "అనువాదం పొందడంలో లోపం."}), 500 # Error getting translation.
+
+
 # To run this app with Gunicorn on HTTP, use the following command in your terminal:
 # gunicorn --bind 0.0.0.0:5000 app:app
 
@@ -128,4 +164,3 @@ def get_bhagavath_geetha_verse():
 # as Cloudflare expects a response on the public IP/port.
 # if __name__ == '__main__':
 #     app.run(debug=True, host='0.0.0.0')
-
